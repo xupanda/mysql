@@ -1,0 +1,89 @@
+#!/bin/bash
+#
+# Sunday 02:00 full backup
+# Monday - saturday 02:00 increamental backup
+# Restor date only need to copy-back the full date as ecah incremental date had prepared.
+# Store 3 months data
+
+##.
+DIR=$(cd `dirname $0`;echo $PWD) && cd $DIR
+## get $info[@]
+. $DIR/mail.sh
+## get fun: notify
+# use notify to send mail,you should defin note first
+. $DIR/info.sh
+
+bin=$(/usr/bin/which innobackupex)
+if [ ! -x $bin ];then
+        echo -e "\e[32minnobackupex\e[0m not exit.\nYou may not install \e[32mxtrabackup\e[0m"
+        exit 2
+fi
+
+chk_dir () {
+        if [ ! -d $dir ];then
+                mkdir -p $dir
+        fi
+}
+
+mk_dir () {
+        root=/BACKUP/mysql && dir=$root && chk_dir
+        logdir=$root/$port/log && dir=$logdir && chk_dir
+        bakdir=$root/$port/data/$type-$ttag && dir=$bakdir && chk_dir
+        log=$logdir/$ttag.log
+}
+
+chk_res () {
+        tail -1 $log | grep 'completed OK!' > /dev/null
+        if [ $? -ne 0 ];then
+                note="$ttag mysql bakup unok!\nsee $log@$HOSTNAME"
+                notify
+        fi
+}
+
+week=$(date "+%w")
+if [ $week -eq 0 ];then
+        type=full
+        else
+        type=incr
+fi
+if [ $week -eq 1 ];then
+        ltype=full
+        elif [ $week -ge 1 ];then
+                ltype=incr
+fi
+
+ttag=$(date "+%Y%m%d")
+ltag=$(date -d "-1 days" "+%Y%m%d")
+#ftag=$(date -d "-$week days" "+%Y%m%d")
+
+fullbak () {
+        mk_dir
+        $com $bakdir 2> $log
+        #echo "$com $bakdir 2> $log"
+        cp $conf $bakdir
+        chk_res
+}
+
+incrbak () {
+        mk_dir
+        basedir=$(find $root/$port/data/$ltype-$ltag -maxdepth 1 -mindepth 1 -type d)
+        $com --incremental $bakdir --incremental-basedir=$basedir 2> $log
+        #echo "$com --incremental $bakdir --incremental-basedir=$basedir 2> $log"
+        cp $conf $bakdir
+        chk_res
+}
+
+doit () {
+        nums=${#info[@]}
+        seq=$[$nums-1]
+        for ((num=0;num<=$seq;num++));do
+                echo ${info[$num]} | while read user passwd port socket conf;do
+                        com="$bin --user=$user --password=$passwd --socket=$socket --defaults-file=$conf"
+                        #${type}bak
+                        fullbak
+                        #incrbak
+                done
+        done
+}
+
+doit
